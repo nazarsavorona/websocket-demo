@@ -1,11 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
-	"time"
-
-	"github.com/gorilla/websocket"
+	"os"
 )
 
 type WebSocketServer struct {
@@ -20,59 +20,38 @@ func (wss *WebSocketServer) HandleWebSocketConnection(w http.ResponseWriter, r *
 		log.Println("WebSocket upgrade failed:", err)
 		return
 	}
-	defer conn.Close()
+	defer func(conn *websocket.Conn) {
+		err := conn.Close()
+		if err != nil {
+			log.Println("Error closing connection:", err)
+		}
+	}(conn)
 
-	// Add the new client connection to the clients list
 	wss.clients = append(wss.clients, conn)
 
 	for {
-		// Read message from the client
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			log.Println("Error reading message:", err)
 			break
 		}
 
-		// Broadcast the message to all connected clients
-		wss.broadcast <- message
+		log.Printf("Message received: %s", message)
 	}
 }
 
-func (wss *WebSocketServer) StartBroadcasting() {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		log.Println("Waiting for messages...")
-		select {
-		case message := <-wss.broadcast:
-			log.Println("Broadcasting message...")
-			// Send the message to all connected clients
-			for _, client := range wss.clients {
-				err := client.WriteMessage(websocket.TextMessage, message)
-				if err != nil {
-					log.Println("Error writing message:", err)
-					return
-				}
-			}
-		case <-ticker.C:
-			log.Println("Default message")
-			// Broadcast a predefined message every 10 seconds
-			broadcastMessage := []byte("Broadcast message every 10 seconds")
-			for _, client := range wss.clients {
-				err := client.WriteMessage(websocket.TextMessage, broadcastMessage)
-				if err != nil {
-					log.Println("Error writing message:", err)
-					return
-				}
-			}
-		}
+func registerInNodeConnector(url string) error {
+	_, err := http.Post("https://"+url+"/nodes", "application/json", bytes.NewBuffer([]byte(`{"ip":"`+os.Getenv("NODE_URL")+`","port":"8081"}`)))
+	if err != nil {
+		log.Panicln(err)
 	}
-
-	log.Println("Closing WebSocket server...")
+	return err
 }
 
 func main() {
+	url := os.Getenv("NODE_CONNECTOR_URL")
+	err := registerInNodeConnector(url)
+
 	wss := WebSocketServer{
 		upgrader:  websocket.Upgrader{},
 		broadcast: make(chan []byte),
@@ -80,10 +59,8 @@ func main() {
 
 	http.HandleFunc("/ws", wss.HandleWebSocketConnection)
 
-	go wss.StartBroadcasting()
-
 	log.Println("Starting WebSocket server on :8081")
-	err := http.ListenAndServe(":8081", nil)
+	err = http.ListenAndServe(":8081", nil)
 	if err != nil {
 		log.Fatal("ListenAndServe:", err)
 	}

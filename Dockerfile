@@ -1,5 +1,5 @@
 # Stage 1: Build the Go executable
-FROM golang:1.17-alpine AS builder
+FROM golang:1.20-alpine AS builder
 
 WORKDIR /app
 
@@ -19,5 +19,8 @@ COPY --from=builder /app/websocket-server .
 EXPOSE 8081
 
 ENV PORT 8081
+
+ENV NODE_CONNECTOR_URL node-connector-production.up.railway.app
+ENV NODE_URL 46.211.11.198:8081
 
 CMD ["./websocket-server"]
